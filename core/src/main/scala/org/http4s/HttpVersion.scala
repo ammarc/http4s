@@ -6,11 +6,11 @@
 
 package org.http4s
 
+import cats.{Order, Show}
 import cats.data.{Writer => _}
 import cats.implicits._
-import cats.{Order, Show}
-import org.http4s.internal.parboiled2._
-import org.http4s.parser._
+import cats.parse.{Parser => P, Parser1}
+import org.http4s.internal.parsing.Rfc5234._
 import org.http4s.util._
 
 /** An HTTP version, as seen on the start line of an HTTP request or response.
@@ -38,20 +38,19 @@ object HttpVersion {
       case "HTTP/1.1" => right_1_1
       case "HTTP/1.0" => right_1_0
       case _ =>
-        new Parser(s).HttpVersion.run()(Parser.DeliveryScheme.Either).leftMap { _ =>
+        parser.parseAll(s).leftMap { _ =>
           ParseFailure("Invalid HTTP version", s"$s was not found to be a valid HTTP version")
         }
     }
 
-  private class Parser(val input: ParserInput)
-      extends org.http4s.internal.parboiled2.Parser
-      with Rfc2616BasicRules {
-    def HttpVersion: Rule1[org.http4s.HttpVersion] =
-      rule {
-        "HTTP/" ~ capture(Digit) ~ "." ~ capture(Digit) ~> { (major: String, minor: String) =>
-          new HttpVersion(major.toInt, minor.toInt)
-        }
-      }
+  private val parser: Parser1[HttpVersion] = {
+    // HTTP-name = %x48.54.54.50 ; HTTP
+    // HTTP-version = HTTP-name "/" DIGIT "." DIGIT
+    val httpVersion = P.string1("HTTP/") *> digit ~ (P.char('.') *> digit)
+
+    httpVersion.map { case (major, minor) =>
+      new HttpVersion(major - '0', minor - '0')
+    }
   }
 
   def fromVersion(major: Int, minor: Int): ParseResult[HttpVersion] =
